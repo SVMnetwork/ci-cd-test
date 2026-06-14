@@ -1,0 +1,88 @@
+version: 2.1
+
+jobs:
+  test:
+    docker:
+      - image: cimg/python:3.12
+
+    working_directory: ~/project
+
+    steps:
+      - checkout
+
+      - restore_cache:
+          keys:
+            - pip-deps-{{ checksum "requirements.txt" }}
+
+      - run:
+          name: Install dependencies
+          command: |
+            python -m pip install --upgrade pip
+            pip install -r requirements.txt
+
+      - save_cache:
+          key: pip-deps-{{ checksum "requirements.txt" }}
+          paths:
+            - ~/.cache/pip
+
+      - run:
+          name: Run tests
+          command: |
+            mkdir -p test-results
+            pytest -q --junitxml=test-results/junit.xml
+
+      - store_test_results:
+          path: test-results
+
+      - store_artifacts:
+          path: test-results
+          destination: test-results
+
+  build_and_upload_artifact:
+    docker:
+      - image: cimg/python:3.12
+
+    working_directory: ~/project
+
+    steps:
+      - checkout
+
+      - restore_cache:
+          keys:
+            - pip-deps-{{ checksum "requirements.txt" }}
+
+      - run:
+          name: Install dependencies
+          command: |
+            python -m pip install --upgrade pip
+            pip install -r requirements.txt
+
+      - run:
+          name: Run data pipeline
+          command: |
+            python -m pipeline.run_pipeline
+
+      - run:
+          name: Package deployment files
+          command: |
+            mkdir -p deploy
+            cp -r pipeline deploy/
+            cp -r data deploy/
+            cp requirements.txt deploy/
+            cp -r dist deploy/
+            tar -czf data-pipeline-demo.tar.gz deploy
+
+      - store_artifacts:
+          path: data-pipeline-demo.tar.gz
+          destination: data-pipeline-demo.tar.gz
+
+workflows:
+  data_pipeline_ci_cd:
+    jobs:
+      - test
+      - build_and_upload_artifact:
+          requires:
+            - test
+          filters:
+            branches:
+              only: main
